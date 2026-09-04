@@ -1,0 +1,27 @@
+Visible Favorited Weapons - VisibleFavorites.dll
+Third-party components statically linked into the DLL. Full license texts:
+their respective repositories.
+
+Dear ImGui - Copyright (c) 2014-2025 Omar Cornut
+  MIT License - https://github.com/ocornut/imgui
+
+stb_image - by Sean Barrett, public domain / MIT - https://github.com/nothings/stb
+
+MinHook - Copyright (C) 2009-2017 Tsuda Kageyu
+  BSD 2-Clause License - https://github.com/TsudaKageyu/minhook
+  (includes HDE32/HDE64, Copyright (c) 2008-2009 Vyacheslav Patkov,
+  BSD 2-Clause License)
+
+spdlog - Copyright (c) 2016 Gabi Melman
+  MIT License - https://github.com/gabime/spdlog
+
+fmt - Copyright (c) 2012-present Victor Zverovich and fmt contributors
+  MIT License - https://github.com/fmtlib/fmt
+
+CommonLibF4 - Copyright (c) Ryan McKenzie and contributors
+  MIT License - https://github.com/alandtse/CommonLibF4
+  (built against the Flip-777 fork, branch rel3gen - same MIT license,
+  carries three-generation address-ID fixes; see the fork's REL3GEN.md)
+
+F4SE (Fallout 4 Script Extender) is required at runtime and is not
+redistributed - https://f4se.silverlock.org

@@ -1,0 +1,8 @@
+/build*
+STATUS.md
+ARCHITECTURE.md
+RUNTIME-COMPATIBILITY.md
+__pycache__/
+deploy-staged.log
+/release-packages
+/_backups
