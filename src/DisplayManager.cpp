@@ -1376,11 +1376,13 @@ namespace Display
     }
 
     void OnPlayerDrawFlip(bool drawn) {
+        // A weapon switch can emit weaponDraw while the weapon is already drawn.
+        // Reconcile equipment even when visibility needs no draw-state transition.
+        g_dirty = true;
         if (g_playerWeaponDrawn == drawn) {
             return;
         }
         g_playerWeaponDrawn = drawn;
-        g_dirty = true;
         UpdateVisibilityAll();
         WashAllDisplays();
         VF_VLOG("player weapon {}", drawn ? "DRAWN" : "sheathed");
