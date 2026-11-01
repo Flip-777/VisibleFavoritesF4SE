@@ -308,6 +308,7 @@ namespace Slots
         f << "bDisplayAnyItemType=" << (g_displayAnyItemType ? 1 : 0) << "\n";
         f << "bShowWeaponFX=" << (g_showWeaponFX ? 1 : 0) << "\n";
         f << "bHideWhenNoBodyArmor=" << (g_hideWhenNoBodyArmor ? 1 : 0) << "\n";
+        f << "bStrictFavoriteSlots=" << (g_strictFavoriteSlots ? 1 : 0) << "\n";
         f << "iPlayerDisplay=" << g_playerDisplayMode << "\n";
         csv("DisplayBlacklist", g_displayBlacklistSpecs);
         f << "bEnableOverlay=" << (g_enableOverlayPending ? 1 : 0) << "\n";
@@ -888,6 +889,8 @@ namespace Slots
                     g_hideAllKey = HotkeyFromIni(val);
                 } else if (key == "bHideWhenNoBodyArmor") {
                     g_hideWhenNoBodyArmor = std::atoi(val.c_str()) != 0;
+                } else if (key == "bStrictFavoriteSlots") {
+                    g_strictFavoriteSlots = std::atoi(val.c_str()) != 0;
                 } else if (key == "iPlayerDisplay") {
                     const int m = std::atoi(val.c_str());
                     g_playerDisplayMode = m >= 0 && m <= 2 ? m : 0;

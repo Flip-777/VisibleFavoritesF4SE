@@ -2304,6 +2304,18 @@ namespace Overlay
             Display::g_dirty = true;
             KickReconcile();
         }
+        if (ImGui::Checkbox("Lock favorites to their slots", &Slots::g_strictFavoriteSlots)) {
+            SaveDeferred();
+            Display::g_dirty = true;
+            KickReconcile();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Each favorited weapon is shown only on the body slot of its favorites position.\n"
+                "If that slot is disabled, the weapon is not shown at all - it is never moved\n"
+                "to another slot while equipped, so displays never jump between positions.\n"
+                "Weapons that are not favorited still use the automatic slot when equipped.");
+        }
         if (ImGui::Checkbox("Display non-weapon favorites", &Slots::g_displayAnyItemType)) {
             SaveDeferred();
             Display::g_dirty = true;

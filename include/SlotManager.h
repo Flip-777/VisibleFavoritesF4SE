@@ -143,6 +143,7 @@ namespace Slots
     extern bool g_displayAnyItemType;
     extern bool g_showWeaponFX;
     extern bool g_hideWhenNoBodyArmor;
+    extern bool g_strictFavoriteSlots;
     extern int g_playerDisplayMode;
     extern bool g_enableOverlay;
     extern bool g_verboseLog;
