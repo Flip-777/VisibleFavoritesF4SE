@@ -87,6 +87,7 @@ namespace Display
     void RetireSlot(RE::NiAVObject* player3D, int slot);
     void ReapDeadNodes(RE::NiAVObject* root, const char* name);
     void Reconcile();
+    void NoteWeaponSwapEvent();
     void RequestReconcile(int delayMs);
     void ReapplySlotTransform(int slot);
     void UpdateVisibilityAll();
