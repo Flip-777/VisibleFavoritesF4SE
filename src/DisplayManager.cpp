@@ -692,12 +692,59 @@ namespace Display
         return true;
     }
 
-    static void SetCloneVisible(int slot, bool visible) {
+    static void ApplyCloneVisible(int slot, bool visible) {
         auto* player3D = Player3D();
         auto* obj = player3D ? player3D->GetObjectByName(SlotNodeName(slot).c_str()) : nullptr;
         if (obj) {
             Show(obj, visible);
         }
+    }
+
+    // Weapon swaps briefly report "no weapon in hand" before the new weapon is
+    // equipped, which made displays pop in for a few frames. During a weapon
+    // swap (shortly after an equip or draw event) showing waits a short moment
+    // and only happens if the slot should still be visible by then. Outside of
+    // swaps (camera switch, loading, editor) displays update immediately.
+    // Hiding is always immediate.
+    constexpr int SHOW_DELAY_MS = 300;
+    constexpr int DRAW_HIDE_DELAY_MS = 200;
+    constexpr auto SWAP_WINDOW = std::chrono::milliseconds(1000);
+    static std::uint32_t g_showGen[Slots::MAX_INDEX] = {};
+    static std::atomic<std::int64_t> g_lastSwapEventMs{ 0 };
+    static std::atomic<std::int64_t> g_lastCameraSwitchMs{ 0 };
+
+    static std::int64_t NowMs() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    void NoteWeaponSwapEvent() {
+        g_lastSwapEventMs = NowMs();
+    }
+
+    // A first/third person switch re-sends draw events; it is not a weapon swap,
+    // so displays must appear right away.
+    static bool InWeaponSwap() {
+        const auto now = NowMs();
+        if (now - g_lastCameraSwitchMs.load() < SWAP_WINDOW.count()) {
+            return false;
+        }
+        return now - g_lastSwapEventMs.load() < SWAP_WINDOW.count();
+    }
+
+    static void SetCloneVisible(int slot, bool visible) {
+        const auto gen = ++g_showGen[slot];
+        if (!visible || Overlay::g_open.load() || !InWeaponSwap()) {
+            ApplyCloneVisible(slot, visible);
+            return;
+        }
+        Schedule([slot, gen]() {
+            std::lock_guard lock(g_tablesMutex);
+            if (g_showGen[slot] != gen || !g_state[slot].formID || !ComputeVisible(slot)) {
+                return;
+            }
+            ApplyCloneVisible(slot, true);
+        }, SHOW_DELAY_MS);
     }
 
     //============= Harvest Queue =============
@@ -1327,6 +1374,29 @@ namespace Display
         g_prevCombo = combo;
     }
 
+    // First/third person switches are checked once per frame (a single pointer
+    // comparison), so displays are hidden or shown in the same frame as the
+    // camera switch instead of up to one Tick (50 ms) later.
+    void CameraWatch() {
+        static bool prevFirstPerson = false;
+        if (!g_loading) {
+            if (const bool fp = IsFirstPerson(); fp != prevFirstPerson) {
+                prevFirstPerson = fp;
+                g_lastCameraSwitchMs = NowMs();
+                UpdateVisibilityAll();
+            }
+        }
+        Schedule(CameraWatch, 0);
+    }
+
+    void StartCameraWatch() {
+        static bool started = false;
+        if (!started) {
+            started = true;
+            Schedule(CameraWatch, 0);
+        }
+    }
+
     void Tick() {
         static bool prevOverlayOpen = false;
         if (const bool nowOpen = Overlay::g_open.load(); nowOpen != prevOverlayOpen) {
@@ -1366,22 +1436,33 @@ namespace Display
             Npc::Reconcile();
         }
 
-        static bool prevFirstPerson = false;
-        if (const bool fp = IsFirstPerson(); fp != prevFirstPerson) {
-            prevFirstPerson = fp;
-            UpdateVisibilityAll();
-        }
-
+        StartCameraWatch();
         Schedule(Tick, 50);
     }
 
     void OnPlayerDrawFlip(bool drawn) {
+        NoteWeaponSwapEvent();
+        // A weapon switch can emit weaponDraw while the weapon is already drawn.
+        // Reconcile equipment even when visibility needs no draw-state transition.
+        g_dirty = true;
         if (g_playerWeaponDrawn == drawn) {
             return;
         }
         g_playerWeaponDrawn = drawn;
-        g_dirty = true;
-        UpdateVisibilityAll();
+        if (drawn) {
+            // When drawing a different favorite, the draw event arrives before the
+            // equipment swap. Hiding right away would hide the previously equipped
+            // (now holstered) weapon for a moment. Let the reconcile pick up the new
+            // equipment first, then apply visibility.
+            const auto generation = g_loadGeneration;
+            Schedule([generation]() {
+                if (!g_loading && generation == g_loadGeneration) {
+                    UpdateVisibilityAll();
+                }
+            }, DRAW_HIDE_DELAY_MS);
+        } else {
+            UpdateVisibilityAll();
+        }
         WashAllDisplays();
         VF_VLOG("player weapon {}", drawn ? "DRAWN" : "sheathed");
     }

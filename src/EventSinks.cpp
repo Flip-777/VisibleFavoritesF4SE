@@ -54,6 +54,7 @@ namespace Display
     public:
         RE::BSEventNotifyControl ProcessEvent(const RE::TESEquipEvent& event, RE::BSTEventSource<RE::TESEquipEvent>*) override {
             if (event.actor.get() == RE::PlayerCharacter::GetSingleton()) {
+                NoteWeaponSwapEvent();
                 g_dirty = true;
             } else {
                 Npc::MarkDirty();
