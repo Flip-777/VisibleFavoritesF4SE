@@ -1111,6 +1111,11 @@ namespace Display
                     break;
                 }
             }
+            // Strict mode: a favorited weapon stays on its own favorite slot only.
+            if (!favPlaced && Slots::g_strictFavoriteSlots && eqWeapExtra &&
+                eqWeapExtra->HasType(RE::EXTRA_DATA_TYPE::kFavorite)) {
+                favPlaced = true;
+            }
             if (!favPlaced) {
                 int primary = Npc::PlayerEquipSlot(eqWeapFam, -1);
                 if (primary >= 0 && want[primary].object) {

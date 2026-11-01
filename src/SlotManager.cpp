@@ -426,6 +426,7 @@ namespace Slots
     bool g_displayAnyItemType = false;
     bool g_showWeaponFX = false;
     bool g_hideWhenNoBodyArmor = true;
+    bool g_strictFavoriteSlots = false;
     int g_playerDisplayMode = 0;
     bool g_enableOverlay = true;
     bool g_verboseLog = false;
