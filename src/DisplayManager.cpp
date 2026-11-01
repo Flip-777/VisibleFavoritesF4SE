@@ -692,12 +692,35 @@ namespace Display
         return true;
     }
 
-    static void SetCloneVisible(int slot, bool visible) {
+    static void ApplyCloneVisible(int slot, bool visible) {
         auto* player3D = Player3D();
         auto* obj = player3D ? player3D->GetObjectByName(SlotNodeName(slot).c_str()) : nullptr;
         if (obj) {
             Show(obj, visible);
         }
+    }
+
+    // Weapon swaps briefly report "no weapon in hand" before the new weapon is
+    // equipped, which made displays pop in for a few frames. Hiding stays
+    // immediate; showing waits a short moment and only happens if the slot
+    // should still be visible by then. The layout editor stays instant.
+    constexpr int SHOW_DELAY_MS = 300;
+    constexpr int DRAW_HIDE_DELAY_MS = 200;
+    static std::uint32_t g_showGen[Slots::MAX_INDEX] = {};
+
+    static void SetCloneVisible(int slot, bool visible) {
+        const auto gen = ++g_showGen[slot];
+        if (!visible || Overlay::g_open.load()) {
+            ApplyCloneVisible(slot, visible);
+            return;
+        }
+        Schedule([slot, gen]() {
+            std::lock_guard lock(g_tablesMutex);
+            if (g_showGen[slot] != gen || !g_state[slot].formID || !ComputeVisible(slot)) {
+                return;
+            }
+            ApplyCloneVisible(slot, true);
+        }, SHOW_DELAY_MS);
     }
 
     //============= Harvest Queue =============
@@ -1383,7 +1406,20 @@ namespace Display
             return;
         }
         g_playerWeaponDrawn = drawn;
-        UpdateVisibilityAll();
+        if (drawn) {
+            // When drawing a different favorite, the draw event arrives before the
+            // equipment swap. Hiding right away would hide the previously equipped
+            // (now holstered) weapon for a moment. Let the reconcile pick up the new
+            // equipment first, then apply visibility.
+            const auto generation = g_loadGeneration;
+            Schedule([generation]() {
+                if (!g_loading && generation == g_loadGeneration) {
+                    UpdateVisibilityAll();
+                }
+            }, DRAW_HIDE_DELAY_MS);
+        } else {
+            UpdateVisibilityAll();
+        }
         WashAllDisplays();
         VF_VLOG("player weapon {}", drawn ? "DRAWN" : "sheathed");
     }
