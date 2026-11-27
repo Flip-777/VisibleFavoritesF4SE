@@ -381,12 +381,13 @@ namespace Display
     {
         std::chrono::steady_clock::time_point due;
         std::function<void()> fn;
+        bool uiThread = false;
     };
     std::mutex g_schedMutex;
     std::condition_variable g_schedCv;
     std::vector<Delayed> g_schedQueue;
 
-    void Schedule(std::function<void()> fn, int delayMs) {
+    void Schedule(std::function<void()> fn, int delayMs, bool uiThread) {
         static bool workerStarted = [] {
             std::thread([]() {
                 std::unique_lock lock(g_schedMutex);
@@ -402,10 +403,15 @@ namespace Display
                         continue;
                     }
                     auto fn = std::move(next->fn);
+                    const bool ui = next->uiThread;
                     g_schedQueue.erase(next);
                     lock.unlock();
                     if (const auto* task = F4SE::GetTaskInterface(); task) {
-                        task->AddTask(std::move(fn));
+                        if (ui) {
+                            task->AddUITask(std::move(fn));
+                        } else {
+                            task->AddTask(std::move(fn));
+                        }
                     }
                     lock.lock();
                 }
@@ -416,7 +422,7 @@ namespace Display
         {
             std::lock_guard lock(g_schedMutex);
             g_schedQueue.push_back({ std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs),
-                std::move(fn) });
+                std::move(fn), uiThread });
         }
         g_schedCv.notify_one();
     }
@@ -704,8 +710,12 @@ namespace Display
 
     void PollHarvest();
 
+    // The harvest runs as an F4SE UI task (main thread), never as a general F4SE task.
+    // F4SE runs general tasks on a job thread while holding its task-queue lock; a blocking Load3D there can wait on a
+    // model entry forever while the main thread queues its own F4SE task (e.g. another plugin's Present hook) and
+    // blocks on that lock: game-wide deadlock. Load3D also runs outside g_tablesMutex (see PollHarvest).
     void StartNextHarvest() {
-        std::lock_guard lock(g_tablesMutex);
+        std::unique_lock lock(g_tablesMutex);
         if (g_busy || g_queue.empty()) {
             return;
         }
@@ -725,6 +735,7 @@ namespace Display
         }
         if (!g_invMgr->tempRef) {
             logger::warn("no tempRef after Begin3D retry - dropping harvest for slot {}", g_active.slot);
+            lock.unlock();
             PollHarvest();
             return;
         }
@@ -737,27 +748,41 @@ namespace Display
             g_active.object->GetFormID(), SafeName(g_active.object),
             g_active.equipped ? " [equipped display]" : "");
         Engine::LoadInventoryItem(g_invMgr, g_active.object, g_active.extra.get(), 0);
+        lock.unlock();
         PollHarvest();
     }
 
     void PollHarvest() {
-        std::lock_guard lock(g_tablesMutex);
-        if (!g_busy || !g_invMgr || !g_invMgr->tempRef) {
-            if (g_busy && g_active.npcSlot >= 0) {
-                Npc::OnHarvestModel(g_active.npcKey, g_active.npcSlot, nullptr,
-                    g_active.object->GetFormID(), OmodHash(g_active.extra.get()));
+        RE::TESObjectREFR* ref = nullptr;
+        std::uint64_t startGen = 0;
+        {
+            std::lock_guard lock(g_tablesMutex);
+            if (!g_busy || !g_invMgr || !g_invMgr->tempRef) {
+                if (g_busy && g_active.npcSlot >= 0) {
+                    Npc::OnHarvestModel(g_active.npcKey, g_active.npcSlot, nullptr,
+                        g_active.object->GetFormID(), OmodHash(g_active.extra.get()));
+                }
+                g_busy = false;
+                return;
             }
-            g_busy = false;
+            ref = g_invMgr->tempRef;
+            startGen = g_loadGeneration;
+        }
+        // Blocking model demand: no VF lock held, so threads that need g_tablesMutex keep running meanwhile.
+        RE::NiAVObject* loaded = ref->Load3D(false);
+        std::lock_guard lock(g_tablesMutex);
+        if (startGen != g_loadGeneration || !g_busy || !g_invMgr || g_invMgr->tempRef != ref) {
+            VF_VLOG("harvest result dropped - state changed while the model loaded");
             return;
         }
-        if (RE::NiAVObject* root = g_invMgr->tempRef->Load3D(false)) {
+        if (RE::NiAVObject* root = loaded) {
             auto* model = Engine::CloneNi(root);
             StripAnimControllers(model);
             if (g_active.npcSlot >= 0) {
                 Npc::OnHarvestModel(g_active.npcKey, g_active.npcSlot, model,
                     g_active.object->GetFormID(), OmodHash(g_active.extra.get()));
                 g_busy = false;
-                Schedule(StartNextHarvest, 50);
+                Schedule(StartNextHarvest, 50, true);
                 return;
             }
             auto& st = g_state[g_active.slot];
@@ -770,7 +795,7 @@ namespace Display
             VF_VLOG("slot {} display {} ({:08X} '{}')", g_active.slot,
                 ok ? "ATTACHED" : "attach failed", st.formID, SafeName(g_active.object));
             g_busy = false;
-            Schedule(StartNextHarvest, 50);
+            Schedule(StartNextHarvest, 50, true);
             return;
         }
         if (++g_polls < 20) {
@@ -779,7 +804,7 @@ namespace Display
                 if (generation == g_loadGeneration) {
                     PollHarvest();
                 }
-            }, 150);
+            }, 150, true);
         } else {
             const auto formID = g_active.object->GetFormID();
             logger::warn("slot {} harvest gave no model - skipping {:08X}", g_active.slot, formID);
@@ -788,7 +813,7 @@ namespace Display
                     OmodHash(g_active.extra.get()));
             }
             g_busy = false;
-            Schedule(StartNextHarvest, 50);
+            Schedule(StartNextHarvest, 50, true);
         }
     }
 
@@ -806,7 +831,7 @@ namespace Display
         p.npcKey = npcKey;
         p.npcSlot = slot;
         g_queue.push_back(std::move(p));
-        Schedule(StartNextHarvest, 0);
+        Schedule(StartNextHarvest, 0, true);
     }
 
     //============= Reconcile =============
@@ -1173,7 +1198,7 @@ namespace Display
         }
 
         if (!g_queue.empty()) {
-            StartNextHarvest();
+            Schedule(StartNextHarvest, 0, true);     // harvest only on the UI task queue (main thread)
         }
     }
 

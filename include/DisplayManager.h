@@ -80,7 +80,9 @@ namespace Display
     const Slots::Transform* GroupAnchor(int slot);
     void ApplyTransforms(RE::NiAVObject* obj, const Slots::Transform* group, const Slots::Transform& m);
     std::uint64_t OmodHash(const RE::ExtraDataList* extra);
-    void Schedule(std::function<void()> fn, int delayMs);
+    // uiThread: run through F4SE's UI task queue (the game's UI/event pump on the main thread) instead of the general
+    // task queue, which F4SE runs on a job thread while holding its task lock. Harvesting (inventory 3D loads) must use it.
+    void Schedule(std::function<void()> fn, int delayMs, bool uiThread = false);
     std::string SlotNodeName(int slot);
     std::string SafeName(RE::TESForm* form);
     RE::NiAVObject* Player3D();
